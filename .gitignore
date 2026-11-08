@@ -1,0 +1,14 @@
+# Entornos virtuales
+venv_TP2_PDI/
+venv/
+.venv/
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+
+# Archivos de macOS
+.DS_Store
+
+# Configuración local de VS Code
+.vscode/
