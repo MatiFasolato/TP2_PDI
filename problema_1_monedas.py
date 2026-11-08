@@ -115,12 +115,34 @@ plt.tight_layout()
 plt.show()
 
 
-# --- Paso 3: limpiar, cerrar y rellenar --------------------------------
+# --- Paso 3: limpiar bordes y obtener la máscara inicial ----------------
+
+# Funciones que usan los pasos 3 y 4
+def rellenar_huecos(mascara):
+    # Borde de 1 px: garantiza que la esquina (0,0) sea fondo exterior
+    m = cv2.copyMakeBorder(mascara, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+
+    # Fondo y huecos = 1; componentes conectadas con conectividad 4 (como en contar_huecos)
+    fondo = np.uint8(m == 0)
+    n, lab, _, _ = cv2.connectedComponentsWithStats(fondo, connectivity=4)
+
+    # Lo que NO es fondo exterior (objeto + huecos) queda en 255
+    exterior = lab[0, 0]
+    relleno = np.uint8(lab != exterior) * 255
+    return relleno[1:-1, 1:-1]
+
+
+def cerrar_y_rellenar(bordes, k):
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    cerrado = cv2.dilate(bordes, kernel)
+    relleno = rellenar_huecos(cerrado)
+    return cv2.erode(relleno, kernel)
+
 
 # Bordes con el umbral elegido
 _, bordes = cv2.threshold(magnitud_u8, 20, 255, cv2.THRESH_BINARY)
 
-# 1) Elimino ruido suelto por área de componente conectada (3.3)
+# Elimino ruido suelto por área de componente conectada (3.3)
 n, labels, stats, _ = cv2.connectedComponentsWithStats(bordes, connectivity=8)
 bordes_limpios = np.zeros_like(bordes)
 for i in range(1, n):
@@ -128,94 +150,109 @@ for i in range(1, n):
         bordes_limpios[labels == i] = 255
 print("Componentes antes de limpiar:", n - 1)
 
-def cerrar_y_rellenar(bordes, k):
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+# Máscara inicial con dos kernels, para comparar
+mascara_7 = cerrar_y_rellenar(bordes_limpios, 7)
+mascara_11 = cerrar_y_rellenar(bordes_limpios, 11)
 
-    # 2) Dilato para cerrar los cortes que quedan en los contornos
-    cerrado = cv2.dilate(bordes, kernel)
-
-    # 3) Relleno desde el fondo: lo que no se inunda es interior de un objeto
-    inundado = cerrado.copy()
-    aux = np.zeros((cerrado.shape[0] + 2, cerrado.shape[1] + 2), np.uint8)
-    cv2.floodFill(inundado, aux, (0, 0), 255)
-    huecos = cv2.bitwise_not(inundado)
-    relleno = cv2.bitwise_or(cerrado, huecos)
-
-    # Erosiono con el mismo kernel para recuperar el tamaño
-    return cv2.erode(relleno, kernel)
+n_7, _, _, _ = cv2.connectedComponentsWithStats(mascara_7, connectivity=8)
+n_11, _, _, _ = cv2.connectedComponentsWithStats(mascara_11, connectivity=8)
+print("Kernel 7:", n_7 - 1, "componentes")
+print("Kernel 11:", n_11 - 1, "componentes")
 
 plt.figure(figsize=(15, 5))
+
 ax1 = plt.subplot(131)
 plt.imshow(bordes_limpios, cmap="gray")
 plt.title("Bordes limpios (T=20)")
 plt.axis("off")
 
-for idx, k in enumerate((7, 11)):
-    mascara_k = cerrar_y_rellenar(bordes_limpios, k)
-    n_obj, _, _, _ = cv2.connectedComponentsWithStats(mascara_k, connectivity=8)
-    print(f"Kernel {k}: {n_obj - 1} componentes")
-
-    plt.subplot(1, 3, idx + 2, sharex=ax1, sharey=ax1)
-    plt.imshow(mascara_k, cmap="gray")
-    plt.title(f"Relleno kernel {k}")
-    plt.axis("off")
-
-plt.tight_layout()
-plt.show()
-
-
-# --- Paso 4: envolvente convexa por componente (máscara kernel 7) ------
-
-mascara_7 = cerrar_y_rellenar(bordes_limpios, 7)
-
-n, labels, stats, cents = cv2.connectedComponentsWithStats(mascara_7, connectivity=8)
-print("Componentes en mascara_7:", n - 1)
-
-# Áreas ordenadas, para detectar fragmentos o uniones
-areas = sorted(stats[1:, cv2.CC_STAT_AREA])
-print("Áreas ordenadas:", areas)
-
-# Envolvente convexa de cada componente, por separado
-mascara_hull = np.zeros_like(mascara_7)
-for i in range(1, n):
-    comp = np.uint8(labels == i) * 255
-    contornos, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnt = max(contornos, key=cv2.contourArea)
-    hull = cv2.convexHull(cnt)
-    cv2.drawContours(mascara_hull, [hull], -1, 255, thickness=-1)
-
-# Cuento los objetos finales
-n_final, _, _, _ = cv2.connectedComponentsWithStats(mascara_hull, connectivity=8)
-print("Objetos tras la envolvente:", n_final - 1, "(esperado: 19)")
-
-# Contornos de la máscara final sobre la imagen reducida, para verificar
-contornos_f, _ = cv2.findContours(mascara_hull, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-overlay = cv2.cvtColor(img_ch, cv2.COLOR_GRAY2RGB)
-cv2.drawContours(overlay, contornos_f, -1, (255, 0, 0), 2)
-
-plt.figure(figsize=(15, 5))
-
-ax1 = plt.subplot(131)
-plt.imshow(mascara_7, cmap="gray")
-plt.title("Kernel 7")
-plt.axis("off")
-
 plt.subplot(132, sharex=ax1, sharey=ax1)
-plt.imshow(mascara_hull, cmap="gray")
-plt.title("Con envolvente convexa")
+plt.imshow(mascara_7, cmap="gray")
+plt.title("Relleno kernel 7 (el elegido)")
 plt.axis("off")
 
 plt.subplot(133, sharex=ax1, sharey=ax1)
-plt.imshow(overlay)
-plt.title("Contornos sobre la imagen")
+plt.imshow(mascara_11, cmap="gray")
+plt.title("Relleno kernel 11 (se pegan objetos)")
 plt.axis("off")
 
 plt.tight_layout()
 plt.show()
 
+# --- Paso 4: completar cada objeto (clausura por componente + relleno) ---
+
+def completar_objeto(comp, k):
+    """comp: recorte 0/255 de UN solo objeto. Devuelve el mismo tamaño."""
+    p = k
+    comp_p = cv2.copyMakeBorder(comp, p, p, p, p, cv2.BORDER_CONSTANT, value=0)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    cerrado = cv2.morphologyEx(comp_p, cv2.MORPH_CLOSE, kernel)
+    lleno = rellenar_huecos(cerrado)
+    return lleno[p:-p, p:-p]
+
+
+# Componentes de la máscara inicial (kernel 7)
+n, labels, stats, cents = cv2.connectedComponentsWithStats(mascara_7, connectivity=8)
+print("Componentes en mascara_7:", n - 1)
+
+# Pruebo dos kernels de clausura
+resultados = {}
+for k in (81, 111):
+    mascara_k = np.zeros_like(mascara_7)
+    for i in range(1, n):
+        x = stats[i, cv2.CC_STAT_LEFT]
+        y = stats[i, cv2.CC_STAT_TOP]
+        w = stats[i, cv2.CC_STAT_WIDTH]
+        h = stats[i, cv2.CC_STAT_HEIGHT]
+
+        # Trabajo solo sobre el recuadro del objeto i
+        comp = np.uint8(labels[y:y+h, x:x+w] == i) * 255
+        lleno = completar_objeto(comp, k)
+        mascara_k[y:y+h, x:x+w] = cv2.bitwise_or(mascara_k[y:y+h, x:x+w], lleno)
+
+    n_k, _, _, _ = cv2.connectedComponentsWithStats(mascara_k, connectivity=8)
+    print(f"Kernel {k}: {n_k - 1} objetos (esperado: 19)")
+    resultados[k] = mascara_k
+
+# Máscara final de los objetos
+mascara_final = resultados[111]
+
+# Borde de cada objeto con el gradiente morfológico (6.4), para el overlay
+k_grad = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+bordes_final = cv2.morphologyEx(mascara_final, cv2.MORPH_GRADIENT, k_grad)
+
+overlay = cv2.cvtColor(img_ch, cv2.COLOR_GRAY2RGB)
+overlay[bordes_final > 0] = (255, 0, 0)
+
+plt.figure(figsize=(15, 9))
+
+ax1 = plt.subplot(221)
+plt.imshow(mascara_7, cmap="gray")
+plt.title("Máscara inicial (kernel 7)")
+plt.axis("off")
+
+plt.subplot(222, sharex=ax1, sharey=ax1)
+plt.imshow(resultados[81], cmap="gray")
+plt.title("Clausura por objeto k=81")
+plt.axis("off")
+
+plt.subplot(223, sharex=ax1, sharey=ax1)
+plt.imshow(mascara_final, cmap="gray")
+plt.title("Clausura por objeto k=111 (final)")
+plt.axis("off")
+
+plt.subplot(224, sharex=ax1, sharey=ax1)
+plt.imshow(overlay)
+plt.title("Bordes sobre la imagen")
+plt.axis("off")
+
+plt.tight_layout()
+plt.show()
+
+
 # --- Paso 5: descriptores geométricos de cada objeto -------------------
 
-n, labels, stats, cents = cv2.connectedComponentsWithStats(mascara_hull, connectivity=8)
+n, labels, stats, cents = cv2.connectedComponentsWithStats(mascara_final, connectivity=8)
 
 objetos = []
 for i in range(1, n):
@@ -280,7 +317,7 @@ for t in range(3):
 
 # 3) Visualización: un color por categoría
 colores = {"dado": (255, 255, 255), 0: (255, 0, 0), 1: (0, 200, 0), 2: (0, 0, 255)}
-salida = np.zeros((*mascara_hull.shape, 3), np.uint8)
+salida = np.zeros((*mascara_final.shape, 3), np.uint8)
 for o in dados:
     salida[labels == o["id"]] = colores["dado"]
 for o in monedas:
