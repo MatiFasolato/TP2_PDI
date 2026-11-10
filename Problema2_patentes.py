@@ -177,7 +177,7 @@ for x1, y1, w1, h1, a1 in candidatos:          # candidato de referencia
     for x2, y2, w2, h2, a2 in candidatos:      # lo comparamos con todos
         misma_altura = abs(h2 - h1) <= 4
         misma_fila = abs((y2 + h2 / 2) - (y1 + h1 / 2)) <= h1
-        cerca = abs(x2 - x1) <= 5 * h1
+        cerca = abs(x2 - x1) <= 90            # una patente mide menos de 100 px de ancho
 
         if misma_altura and misma_fila and cerca:
             grupo.append((x2, y2, w2, h2, a2))
@@ -251,7 +251,7 @@ def agrupar_letras(candidatos):
         for x2, y2, w2, h2, a2 in candidatos:
             misma_altura = abs(h2 - h1) <= 4
             misma_fila = abs((y2 + h2 / 2) - (y1 + h1 / 2)) <= h1
-            cerca = abs(x2 - x1) <= 5 * h1
+            cerca = abs(x2 - x1) <= 90
             if misma_altura and misma_fila and cerca:
                 grupo.append((x2, y2, w2, h2, a2))
 
