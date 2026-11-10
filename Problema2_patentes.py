@@ -421,15 +421,13 @@ plt.show(block=True)
 
 # --- Todas las imágenes -------------------------------------------
 
-
 # Para cada imagen: primero probamos Otsu. Si no aparecen las 6 letras,
-# probamos el umbral de respaldo
-# Anotamos qué pasó con cada uno.
+# probamos el umbral de respaldo. Anotamos qué pasó con cada uno.
 
 print(f"\nimagen | Otsu | letras Otsu | letras T={T_elegido} | resultado")
 print("-------+------+-------------+--------------+-----------")
 
-plt.figure(figsize=(16, 8))
+resumen = []                     # guardamos (imagen a mostrar, titulo) de cada una
 con_otsu = 0
 detectadas = 0
 
@@ -443,7 +441,7 @@ for n in range(1, 13):
     T_otsu, img_bin_otsu = cv2.threshold(img_gris, 0, 255, cv2.THRESH_OTSU)
     grupo_otsu = agrupar_letras(buscar_letras(img_bin_otsu))
 
-    # 2) Umbral de respaldo 
+    # 2) Umbral de respaldo
     _, img_bin_resp = cv2.threshold(img_gris, T_elegido, 255, cv2.THRESH_BINARY)
     grupo_resp = agrupar_letras(buscar_letras(img_bin_resp))
 
@@ -458,18 +456,13 @@ for n in range(1, 13):
 
     print(f"{nombre}  | {T_otsu:4.0f} | {len(grupo_otsu):11d} | {len(grupo_resp):12d} | {resultado}")
 
-    plt.subplot(3, 4, n)
-    plt.xticks([])
-    plt.yticks([])
-
     if T is None:                                            # no se encontró la patente
-        plt.imshow(img_rgb)
-        plt.title(f"{nombre}: no detectada")
+        resumen.append((img_rgb, f"{nombre}: no detectada"))
         continue
 
     detectadas += 1
 
-    #rectángulo de la patente
+    # rectángulo de la patente
     x_min = min(x for x, y, w, h, area in grupo)
     y_min = min(y for x, y, w, h, area in grupo)
     x_max = max(x + w for x, y, w, h, area in grupo)
@@ -484,15 +477,42 @@ for n in range(1, 13):
     patente_rgb = img_rgb[y0:y1, x0:x1].copy()
     patente_gris = img_gris[y0:y1, x0:x1]
 
-    #caracteres
+    # caracteres
     _, patente_bin = cv2.threshold(patente_gris, T, 255, cv2.THRESH_BINARY)
     caracteres = agrupar_letras(buscar_letras(patente_bin))
 
     for x, y, w, h, area in caracteres:
         cv2.rectangle(patente_rgb, (x, y), (x + w, y + h), (255, 0, 0), 1)
 
-    plt.imshow(patente_rgb)
-    plt.title(f"{nombre}: {resultado} (T={T:.0f})")
+    # etapas de esta imagen
+    img_etapas = img_rgb.copy()
+    for x, y, w, h, area in grupo:
+        cv2.rectangle(img_etapas, (x, y), (x + w, y + h), (255, 0, 0), 1)
+    cv2.rectangle(img_etapas, (x0, y0), (x1, y1), (0, 255, 0), 2)
+
+    _, img_bin_T = cv2.threshold(img_gris, T, 255, cv2.THRESH_BINARY)
+
+    plt.figure(figsize=(14, 3))
+    plt.subplot(141); plt.imshow(img_bin_T, cmap="gray"); plt.title(f"Umbralada ({resultado}, T={T:.0f})"); plt.xticks([]); plt.yticks([])
+    plt.subplot(142); plt.imshow(img_etapas); plt.title("Letras y patente detectada"); plt.xticks([]); plt.yticks([])
+    plt.subplot(143); plt.imshow(patente_bin, cmap="gray"); plt.title("Patente umbralada"); plt.xticks([]); plt.yticks([])
+    plt.subplot(144); plt.imshow(patente_rgb); plt.title(f"Caracteres ({len(caracteres)})"); plt.xticks([]); plt.yticks([])
+    plt.suptitle(nombre)
+    guardar_figura(f"p2_etapas_{nombre}")
+    plt.show(block=True)
+
+    resumen.append((patente_rgb, f"{nombre}: {resultado} (T={T:.0f})"))
+
+# --- Resumen de las 12 imágenes -----------------------------------
+
+plt.figure(figsize=(16, 8))
+
+for k, (imagen, titulo) in enumerate(resumen):
+    plt.subplot(3, 4, k + 1)
+    plt.imshow(imagen)
+    plt.title(titulo)
+    plt.xticks([])
+    plt.yticks([])
 
 plt.suptitle(f"Patentes detectadas: {detectadas} de 12")
 guardar_figura("p2_resumen")
